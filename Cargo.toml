@@ -1,0 +1,46 @@
+[package]
+name = "beacon-devnet-genesis"
+version = "0.1.0"
+edition = "2021"
+description = "Generate beacon chain devnet genesis states from mnemonics"
+keywords = ["ethereum", "beacon", "devnet"]
+repository = "https://github.com/dapplion/beacon-devnet-genesis"
+documentation = "https://docs.rs/beacon-devnet-genesis"
+authors = ["dapplion <dapplion@chainsafe.io>"]
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "beacon-devnet-genesis"
+path = "src/main.rs"
+
+[dependencies]
+types = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_network_config = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+genesis = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+state_processing = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_wallet = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_ssz = "0.4.1"
+anyhow = "1.0.70"
+clap = { version = "4.2.4", features = ["derive"] }
+serde = "1.0.160"
+serde_yaml = "0.9.21"
+
+[patch]
+[patch.crates-io]
+eth2_ssz = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_ssz_derive = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_ssz_types = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+tree_hash = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+tree_hash_derive = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_hashing = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+
+[patch."https://github.com/ralexstokes/mev-rs"]
+mev-rs = { git = "https://github.com/ralexstokes//mev-rs", rev = "7813d4a4a564e0754e9aaab2d95520ba437c3889" }
+[patch."https://github.com/ralexstokes/ethereum-consensus"]
+ethereum-consensus = { git = "https://github.com/ralexstokes//ethereum-consensus", rev = "9b0ee0a8a45b968c8df5e7e64ea1c094e16f053d" }
+[patch."https://github.com/ralexstokes/ssz-rs"]
+ssz-rs = { git = "https://github.com/ralexstokes//ssz-rs", rev = "adf1a0b14cef90b9536f28ef89da1fab316465e1" }
+
