@@ -1,6 +1,6 @@
 FROM rust:1.68.0 as builder
 WORKDIR /app
-RUN apt-get update && apt-get install -y protobuf-compiler
+RUN apt-get update && apt-get install -y protobuf-compiler cmake
 COPY . .
 RUN cargo build --release
 

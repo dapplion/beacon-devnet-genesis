@@ -24,6 +24,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - name: Install Protoc
+        uses: arduino/setup-protoc@e52d9eb8f7b63115df1ac544a1376fdbf5a39612
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - run: cargo fmt -- --check
       - run: cargo clippy -- --deny warnings
@@ -78,6 +82,10 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Install Protoc
+        uses: arduino/setup-protoc@e52d9eb8f7b63115df1ac544a1376fdbf5a39612
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check documentation
         run: cargo doc --no-deps --document-private-items --all-features  
