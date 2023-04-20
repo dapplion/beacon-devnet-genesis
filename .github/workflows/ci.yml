@@ -55,6 +55,10 @@ jobs:
         with:
           toolchain: ${{ matrix.rust || 'stable' }}
           targets: ${{ matrix.target }}
+      - name: Install Protoc
+        uses: arduino/setup-protoc@e52d9eb8f7b63115df1ac544a1376fdbf5a39612
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check
         run: cargo check
