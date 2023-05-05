@@ -47,3 +47,9 @@ cargo install beacon-devnet-genesis
 ```
 beacon-devnet-genesis --help
 ```
+
+## Example
+
+```
+cargo run -- --testnet-dir tests/testnet_dir_minimal/ --mnemonics tests/mnemonics.yml
+```

@@ -6,12 +6,14 @@ use eth2_wallet::bip39::Seed;
 use eth2_wallet::bip39::{Language, Mnemonic};
 use eth2_wallet::{recover_validator_secret_from_mnemonic, KeyType};
 use genesis::{bls_withdrawal_credentials, DEFAULT_ETH1_BLOCK_HASH};
+use rayon::prelude::*;
 use serde::Deserialize;
 use ssz::Encode;
 use state_processing::common::DepositDataTree;
 use state_processing::upgrade::{upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use types::{
     BeaconState, Epoch, Eth1Data, EthSpec, EthSpecId, GnosisEthSpec, Hash256, MainnetEthSpec,
     MinimalEthSpec, PublicKeyBytes, SecretKey, Validator, DEPOSIT_TREE_DEPTH,
@@ -84,42 +86,61 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
     state.fill_randao_mixes_with(eth1_block_hash);
 
     // Track tranches for latter auditing
-    let mut tranches = String::from("mnemonic,offset,pubkey,validator_index");
+    let mut tranches = String::from("validator_index,pubkey");
 
-    for (mnidx, mnemonic_entry) in parse_mnemonics_arg(cli)?.iter().enumerate() {
-        let seed = seed_from_mnemonic(&mnemonic_entry.mnemonic)?;
-        for i in 0..mnemonic_entry.count {
-            let pubkey: PublicKeyBytes = keypair_from_seed(&seed, i, KeyType::Voting)?.pk.into();
-            tranches.push_str(&format!(
-                "\n{},{},{},{}",
-                mnidx,
-                i,
-                pubkey.as_hex_string(),
-                state.validators().len()
-            ));
-            state
-                .validators_mut()
-                .push(Validator {
-                    pubkey,
-                    withdrawal_credentials: compute_withdrawal_credentials(
-                        spec,
-                        &seed,
-                        mnemonic_entry,
-                        i,
-                    )?,
-                    effective_balance: spec.max_effective_balance,
-                    slashed: false,
-                    activation_eligibility_epoch: GENESIS_EPOCH,
-                    activation_epoch: GENESIS_EPOCH,
-                    exit_epoch: spec.far_future_epoch,
-                    withdrawable_epoch: spec.far_future_epoch,
-                })
-                .unwrap();
-            state
-                .balances_mut()
-                .push(spec.max_effective_balance)
-                .unwrap();
-        }
+    let mnemonic_args = parse_mnemonics_arg(cli)?;
+    let seeds = mnemonic_args
+        .iter()
+        .map(|mnemonic_arg| seed_from_mnemonic(&mnemonic_arg.mnemonic))
+        .collect::<Result<Vec<Seed>>>()?;
+
+    let computed_validators = AtomicUsize::new(0);
+
+    let validators = mnemonic_args
+        .iter()
+        .zip(seeds.iter())
+        .flat_map(|(mnemonic_entry, seed)| {
+            (0..mnemonic_entry.count).map(move |i| (mnemonic_entry, seed, i))
+        })
+        .collect::<Vec<_>>()
+        .par_iter()
+        .map(|(mnemonic_entry, seed, i)| {
+            let pubkey: PublicKeyBytes = keypair_from_seed(&seed, *i, KeyType::Voting)?.pk.into();
+            let validator = Validator {
+                pubkey,
+                withdrawal_credentials: compute_withdrawal_credentials(
+                    spec,
+                    &seed,
+                    mnemonic_entry,
+                    *i,
+                )?,
+                effective_balance: spec.max_effective_balance,
+                slashed: false,
+                activation_eligibility_epoch: GENESIS_EPOCH,
+                activation_epoch: GENESIS_EPOCH,
+                exit_epoch: spec.far_future_epoch,
+                withdrawable_epoch: spec.far_future_epoch,
+            };
+
+            let completed = computed_validators.fetch_add(1, Ordering::Relaxed);
+            if completed % 1000 == 0 {
+                eprintln!("computed validators {}", completed)
+            }
+            Ok(validator)
+        })
+        .collect::<Result<Vec<Validator>>>()?;
+
+    for validator in validators {
+        tranches.push_str(&format!(
+            "\n{},{}",
+            state.validators().len(),
+            validator.pubkey.as_hex_string(),
+        ));
+        state.validators_mut().push(validator).unwrap();
+        state
+            .balances_mut()
+            .push(spec.max_effective_balance)
+            .unwrap();
     }
 
     let validators_count = state.validators().len();
