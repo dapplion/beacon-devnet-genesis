@@ -64,9 +64,6 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check
-        run: cargo check
-
       - name: Test
         run: cargo test -- --test-threads=1 --nocapture
 
