@@ -19,12 +19,12 @@ name = "keypair_derive"
 harness = false
 
 [dependencies]
-types = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-eth2_network_config = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-genesis = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-state_processing = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-eth2_wallet = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+types = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+eth2_network_config = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+genesis = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+state_processing = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+eth2_wallet = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
 eth2_ssz = "0.4.1"
 anyhow = "1.0.70"
 clap = { version = "4.2.4", features = ["derive"] }
@@ -37,13 +37,13 @@ criterion = "0.3"
 
 [patch]
 [patch.crates-io]
-eth2_ssz = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-eth2_ssz_derive = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-eth2_ssz_types = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-tree_hash = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-tree_hash_derive = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
-eth2_hashing = { git = "https://github.com/sigp/lighthouse", branch = "stable" }
+eth2_ssz = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+eth2_ssz_derive = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+eth2_ssz_types = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+tree_hash = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+tree_hash_derive = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
+eth2_hashing = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
 
 [patch."https://github.com/ralexstokes/mev-rs"]
 mev-rs = { git = "https://github.com/ralexstokes//mev-rs", rev = "7813d4a4a564e0754e9aaab2d95520ba437c3889" }
