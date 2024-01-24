@@ -15,8 +15,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use types::{
-    BeaconState, Epoch, Eth1Data, EthSpec, EthSpecId, GnosisEthSpec, Hash256, MainnetEthSpec,
-    MinimalEthSpec, PublicKeyBytes, SecretKey, Validator, DEPOSIT_TREE_DEPTH,
+    BeaconState, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash, GnosisEthSpec, Hash256,
+    MainnetEthSpec, MinimalEthSpec, PublicKeyBytes, SecretKey, Validator, DEPOSIT_TREE_DEPTH,
 };
 use types::{ChainSpec, Keypair};
 
@@ -55,6 +55,7 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
     run(cli)
 }
 
@@ -81,6 +82,11 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
     let eth1_block_hash = parse_eth1_block_arg(cli)?;
     let eth1_data = empty_eth1_data(eth1_block_hash);
     let mut state = BeaconState::<T>::new(genesis_time, eth1_data, spec);
+
+    if let Ok(state) = state.as_capella_mut() {
+        state.latest_execution_payload_header.block_hash =
+            ExecutionBlockHash::from_root(eth1_block_hash.into());
+    }
 
     // Seed RANDAO with Eth1 entropy
     state.fill_randao_mixes_with(eth1_block_hash);
