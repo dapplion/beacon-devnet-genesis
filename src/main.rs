@@ -85,7 +85,7 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
 
     if let Ok(state) = state.as_capella_mut() {
         state.latest_execution_payload_header.block_hash =
-            ExecutionBlockHash::from_root(eth1_block_hash.into());
+            ExecutionBlockHash::from_root(eth1_block_hash);
     }
 
     // Seed RANDAO with Eth1 entropy
@@ -111,12 +111,12 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
         .collect::<Vec<_>>()
         .par_iter()
         .map(|(mnemonic_entry, seed, i)| {
-            let pubkey: PublicKeyBytes = keypair_from_seed(&seed, *i, KeyType::Voting)?.pk.into();
+            let pubkey: PublicKeyBytes = keypair_from_seed(seed, *i, KeyType::Voting)?.pk.into();
             let validator = Validator {
                 pubkey,
                 withdrawal_credentials: compute_withdrawal_credentials(
                     spec,
-                    &seed,
+                    seed,
                     mnemonic_entry,
                     *i,
                 )?,
