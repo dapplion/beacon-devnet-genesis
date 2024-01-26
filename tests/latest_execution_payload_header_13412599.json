@@ -1,0 +1,17 @@
+{
+  "parent_hash": "0xde404fe0f43f4cc434e0d9918754a2cba5f086f16c28c3c17fe9e733ae50283d",
+  "fee_recipient": "0x0c36ac8863d0352436a70addbf1be34f3ea11017",
+  "state_root": "0x8ebe0c601523b47f986dca1cae20100a3fcf94fb31d549332a8dd6567873ac99",
+  "receipts_root": "0xa3f145db4a383c5678f6c436018ebdf6c893d78305671a623ff4a446c573f1e1",
+  "logs_bloom": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "prev_randao": "0xe74a49ea705d9db9dc98f64d5e5d55cc06e7ea0963e648fd118fc9bbc1d56275",
+  "block_number": "32096192",
+  "gas_limit": "17000000",
+  "gas_used": "15610327",
+  "timestamp": "1706056335",
+  "extra_data": "0x4e65746865726d696e64",
+  "base_fee_per_gas": "253562166",
+  "block_hash": "0xa2f42e0a053185199c1fee404b08d5f0d0102ccf0d5596362994122414645034",
+  "transactions_root": "0xe430fc66f14984290ce0b9028d2af7c0190cd11750f4808b619988f956ba923b",
+  "withdrawals_root": "0x230a6fc49e5cfcfd0d6429590446d87e1d5b2475eec4fbec084ab2527ffff171"
+}

@@ -8,17 +8,20 @@ use eth2_wallet::{recover_validator_secret_from_mnemonic, KeyType};
 use genesis::{bls_withdrawal_credentials, DEFAULT_ETH1_BLOCK_HASH};
 use rayon::prelude::*;
 use serde::Deserialize;
+use ssz::Decode;
 use ssz::Encode;
 use state_processing::common::DepositDataTree;
 use state_processing::upgrade::{upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tree_hash::TreeHash;
 use types::{
-    BeaconState, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash, GnosisEthSpec, Hash256,
-    MainnetEthSpec, MinimalEthSpec, PublicKeyBytes, SecretKey, Validator, DEPOSIT_TREE_DEPTH,
+    BeaconState, ChainSpec, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash,
+    ExecutionPayloadHeaderCapella, GnosisEthSpec, Hash256, Keypair, MainnetEthSpec, MinimalEthSpec,
+    PublicKeyBytes, SecretKey, Transactions, Uint256, Validator, Withdrawal, Withdrawals,
+    DEPOSIT_TREE_DEPTH,
 };
-use types::{ChainSpec, Keypair};
 
 #[derive(Debug, Deserialize)]
 struct MnemonicEntry {
@@ -73,14 +76,27 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
         .map_err(|e| anyhow!("chain_spec error: {:?}", e))?;
 
     let genesis_time = spec.min_genesis_time + spec.genesis_delay;
-    let eth1_block_hash = parse_eth1_block_arg(cli)?;
+    let eth1_block_arg = Eth1BlockCliArg::parse_from_cli(cli)?;
+    let eth1_block_hash = eth1_block_arg.hash()?;
     let eth1_data = empty_eth1_data(eth1_block_hash);
     let mut state = BeaconState::<T>::new(genesis_time, eth1_data, spec);
 
     if let Ok(state) = state.as_capella_mut() {
-        state.latest_execution_payload_header.block_hash =
-            ExecutionBlockHash::from_root(eth1_block_hash);
-    }
+        let eth1_block = match eth1_block_arg {
+            Eth1BlockCliArg::NotSet => {
+                return Err(anyhow!("Must set eth1_block for capella genesis state"))
+            }
+            Eth1BlockCliArg::Hash(_) => {
+                return Err(anyhow!(
+                "Must set eth1_block to a block JSON not just the hash for capella genesis state"
+            ))
+            }
+            Eth1BlockCliArg::Block(block) => block,
+        };
+
+        state.latest_execution_payload_header =
+            exec_json_block_to_execution_payload_header(eth1_block)?;
+    };
 
     // Seed RANDAO with Eth1 entropy
     state.fill_randao_mixes_with(eth1_block_hash);
@@ -184,14 +200,48 @@ fn parse_mnemonics_arg(cli: &Cli) -> Result<Vec<MnemonicEntry>> {
     Ok(serde_yaml::from_str(&yaml_str)?)
 }
 
-fn parse_eth1_block_arg(cli: &Cli) -> Result<Hash256> {
-    let eth1_block_hash = match &cli.eth1_block {
-        Some(hash) => {
-            hex::decode(hash).map_err(|e| anyhow!("Invalid eth1_block {}: {:?}", hash, e))?
+enum Eth1BlockCliArg {
+    NotSet,
+    Hash(Hash256),
+    Block(ethers_core::types::Block<ethers_core::types::Transaction>),
+}
+
+impl Eth1BlockCliArg {
+    fn parse_from_cli(cli: &Cli) -> Result<Eth1BlockCliArg> {
+        let Some(eth1_block_str) = cli.eth1_block.as_ref() else {
+            return Ok(Eth1BlockCliArg::NotSet);
+        };
+
+        if let Ok(hash) = hex::decode(eth1_block_str) {
+            return Ok(Eth1BlockCliArg::Hash(Hash256::from_slice(&hash)));
         }
-        None => DEFAULT_ETH1_BLOCK_HASH.to_vec(),
-    };
-    Ok(Hash256::from_slice(&eth1_block_hash))
+
+        let eth1_block_str = cli
+            .eth1_block
+            .as_ref()
+            .ok_or_else(|| anyhow!("should set eth1_block for capella genesis states"))?;
+
+        let maybe_path = Path::new(&eth1_block_str);
+        let eth1_block_json = if maybe_path.is_file() {
+            // If the path points to a file that exists, read the file
+            fs::read_to_string(maybe_path)?
+        } else {
+            // Otherwise, treat the input as a JSON string
+            eth1_block_str.to_string()
+        };
+
+        Ok(Eth1BlockCliArg::Block(serde_json::from_str(
+            &eth1_block_json,
+        )?))
+    }
+
+    fn hash(&self) -> Result<Hash256> {
+        match self {
+            Eth1BlockCliArg::NotSet => Ok(Hash256::from_slice(DEFAULT_ETH1_BLOCK_HASH)),
+            Eth1BlockCliArg::Hash(hash) => Ok(*hash),
+            Eth1BlockCliArg::Block(block) => block.hash.ok_or_else(|| anyhow!("no block.hash")),
+        }
+    }
 }
 
 fn empty_eth1_data(eth1_block_hash: Hash256) -> Eth1Data {
@@ -256,6 +306,74 @@ fn compute_withdrawal_credentials(
     })
 }
 
+fn exec_json_block_to_execution_payload_header<T: EthSpec>(
+    eth1_block: ethers_core::types::Block<ethers_core::types::Transaction>,
+) -> Result<ExecutionPayloadHeaderCapella<T>> {
+    let transactions: Transactions<T> = eth1_block
+        .transactions
+        .iter()
+        .map(|tx| tx.rlp().to_vec().into())
+        .collect::<Vec<_>>()
+        .into();
+
+    let withdrawals: Withdrawals<T> = if let Some(el_withdrawals) = eth1_block.withdrawals {
+        el_withdrawals
+            .iter()
+            .map(|withdrawal| Withdrawal {
+                index: withdrawal.index.as_u64(),
+                validator_index: withdrawal.validator_index.as_u64(),
+                address: withdrawal.address.to_fixed_bytes().into(),
+                amount: withdrawal.amount.as_u64(),
+            })
+            .collect::<Vec<_>>()
+            .into()
+    } else {
+        <_>::default()
+    };
+
+    Ok(ExecutionPayloadHeaderCapella {
+        parent_hash: ExecutionBlockHash::from_root(eth1_block.parent_hash.to_fixed_bytes().into()),
+        fee_recipient: eth1_block
+            .author
+            .ok_or_else(|| anyhow!("no block.author"))?,
+        state_root: eth1_block.state_root,
+        receipts_root: eth1_block.receipts_root,
+        logs_bloom: eth1_block
+            .logs_bloom
+            .ok_or_else(|| anyhow!("no block.logs_bloom"))?
+            .to_fixed_bytes()
+            .to_vec()
+            .into(),
+        prev_randao: eth1_block
+            .mix_hash
+            .ok_or_else(|| anyhow!("no block.mix_hash"))?,
+        block_number: eth1_block
+            .number
+            .ok_or_else(|| anyhow!("no block.number"))?
+            .as_u64(),
+        gas_limit: eth1_block.gas_limit.as_u64(),
+        gas_used: eth1_block.gas_used.as_u64(),
+        timestamp: eth1_block.timestamp.as_u64(),
+        extra_data: eth1_block.extra_data.to_vec().into(),
+        base_fee_per_gas: Uint256::from_ssz_bytes(
+            &eth1_block
+                .base_fee_per_gas
+                .ok_or_else(|| anyhow!("no block.base_fee_per_gas"))?
+                .as_ssz_bytes(),
+        )
+        .map_err(|e| anyhow!("unable to convert base_fee_per_gas {e:?}"))?,
+        block_hash: ExecutionBlockHash::from_root(
+            eth1_block
+                .hash
+                .ok_or_else(|| anyhow!("no block.hash"))?
+                .to_fixed_bytes()
+                .into(),
+        ),
+        withdrawals_root: withdrawals.tree_hash_root(),
+        transactions_root: transactions.tree_hash_root(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,7 +398,11 @@ mod tests {
         );
     }
 
-    fn run_cli_test<T: EthSpec>(testnet_dir: &str, mnemonics: Option<String>) -> BeaconState<T> {
+    fn run_cli_test<T: EthSpec>(
+        testnet_dir: &str,
+        mnemonics: Option<String>,
+        output_path: Option<&str>,
+    ) -> BeaconState<T> {
         let count = 100;
         let mnemonics = mnemonics.unwrap_or(
             "
@@ -289,22 +411,23 @@ mod tests {
                 .to_string(),
         );
 
+        let output_path = output_path.to_owned().unwrap_or(testnet_dir);
+        let state_filepath = Path::new(output_path).join("genesis.ssz");
+
         run(Cli {
             testnet_dir: testnet_dir.to_string(),
-            output: None,
+            output: Some(output_path.to_string()),
             eth1_block: None,
             mnemonics,
         })
         .unwrap();
 
-        let eth2_network_config = Eth2NetworkConfig::load(testnet_dir.clone().into()).unwrap();
+        let eth2_network_config = Eth2NetworkConfig::load(testnet_dir.into()).unwrap();
         let spec = &eth2_network_config.chain_spec::<T>().unwrap();
 
-        let state = BeaconState::<T>::from_ssz_bytes(
-            &fs::read(Path::new(testnet_dir).join("genesis.ssz")).unwrap(),
-            spec,
-        )
-        .unwrap();
+        dbg!(&state_filepath);
+        let state =
+            BeaconState::<T>::from_ssz_bytes(&fs::read(state_filepath).unwrap(), spec).unwrap();
 
         // Sanity check state has correct data
         assert_eq!(state.validators().len(), count, "wrong validators.len()");
@@ -315,17 +438,17 @@ mod tests {
 
     #[test]
     fn testnet_dir_mainnet() {
-        run_cli_test::<MainnetEthSpec>("tests/testnet_dir_mainnet", None);
+        run_cli_test::<MainnetEthSpec>("tests/testnet_dir_mainnet", None, None);
     }
 
     #[test]
     fn testnet_dir_minimal() {
-        run_cli_test::<MinimalEthSpec>("tests/testnet_dir_minimal", None);
+        run_cli_test::<MinimalEthSpec>("tests/testnet_dir_minimal", None, None);
     }
 
     #[test]
     fn testnet_dir_gnosis() {
-        run_cli_test::<GnosisEthSpec>("tests/testnet_dir_gnosis", None);
+        run_cli_test::<GnosisEthSpec>("tests/testnet_dir_gnosis", None, None);
     }
 
     #[test]
@@ -341,6 +464,7 @@ mod tests {
   withdrawal_execution_address: {address}
 ",
             )),
+            Some("execution_withdrawal"),
         );
 
         let expected_withdrawal_credentials = hex::decode(withcred).unwrap();
@@ -350,5 +474,26 @@ mod tests {
                 &expected_withdrawal_credentials
             );
         }
+    }
+
+    #[test]
+    fn test_exec_json_block_to_execution_payload_header() {
+        assert_eq!(
+            GnosisEthSpec::max_withdrawals_per_payload(),
+            8,
+            "wrong GnosisEthSpec::max_withdrawals_per_payload"
+        );
+
+        let expected_header =
+            fs::read_to_string("tests/latest_execution_payload_header_13412599.json").unwrap();
+        let eth1_block_json = fs::read_to_string("tests/block_exec_32096192.json").unwrap();
+        let eth1_block: ethers_core::types::Block<ethers_core::types::Transaction> =
+            serde_json::from_str(&eth1_block_json).unwrap();
+
+        let header =
+            exec_json_block_to_execution_payload_header::<GnosisEthSpec>(eth1_block).unwrap();
+
+        let header = serde_json::to_string_pretty(&header).unwrap();
+        pretty_assertions::assert_eq!(header, expected_header.trim());
     }
 }
