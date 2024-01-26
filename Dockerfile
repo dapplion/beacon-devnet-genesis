@@ -1,6 +1,6 @@
 FROM rust:1.73.0 as builder
 WORKDIR /app
-RUN apt-get update && apt-get install -y protobuf-compiler cmake
+RUN apt-get update && apt-get install -y protobuf-compiler cmake libclang-dev
 COPY . .
 RUN cargo build --release
 
