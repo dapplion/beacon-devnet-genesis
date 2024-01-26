@@ -8,7 +8,8 @@ use eth2_wallet::{recover_validator_secret_from_mnemonic, KeyType};
 use genesis::{bls_withdrawal_credentials, DEFAULT_ETH1_BLOCK_HASH};
 use rayon::prelude::*;
 use serde::Deserialize;
-use ssz::{Decode, Encode};
+use ssz::Decode;
+use ssz::Encode;
 use state_processing::common::DepositDataTree;
 use state_processing::upgrade::{upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella};
 use std::fs;
@@ -16,12 +17,11 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tree_hash::TreeHash;
 use types::{
-    BeaconState, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash,
-    ExecutionPayloadHeaderCapella, GnosisEthSpec, Hash256, MainnetEthSpec, MinimalEthSpec,
+    BeaconState, ChainSpec, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash,
+    ExecutionPayloadHeaderCapella, GnosisEthSpec, Hash256, Keypair, MainnetEthSpec, MinimalEthSpec,
     PublicKeyBytes, SecretKey, Transactions, Uint256, Validator, Withdrawal, Withdrawals,
     DEPOSIT_TREE_DEPTH,
 };
-use types::{ChainSpec, Keypair};
 
 #[derive(Debug, Deserialize)]
 struct MnemonicEntry {
@@ -212,10 +212,9 @@ impl Eth1BlockCliArg {
             return Ok(Eth1BlockCliArg::NotSet);
         };
 
-        match hex::decode(&eth1_block_str) {
-            Ok(hash) => return Ok(Eth1BlockCliArg::Hash(Hash256::from_slice(&hash))),
-            Err(_) => {}
-        };
+        if let Ok(hash) = hex::decode(eth1_block_str) {
+            return Ok(Eth1BlockCliArg::Hash(Hash256::from_slice(&hash)));
+        }
 
         let eth1_block_str = cli
             .eth1_block
@@ -238,7 +237,7 @@ impl Eth1BlockCliArg {
 
     fn hash(&self) -> Result<Hash256> {
         match self {
-            Eth1BlockCliArg::NotSet => Ok(Hash256::from_slice(&DEFAULT_ETH1_BLOCK_HASH.to_vec())),
+            Eth1BlockCliArg::NotSet => Ok(Hash256::from_slice(DEFAULT_ETH1_BLOCK_HASH)),
             Eth1BlockCliArg::Hash(hash) => Ok(*hash),
             Eth1BlockCliArg::Block(block) => block.hash.ok_or_else(|| anyhow!("no block.hash")),
         }

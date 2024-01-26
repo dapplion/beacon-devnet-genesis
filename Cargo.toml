@@ -22,15 +22,15 @@ name = "keypair_derive"
 harness = false
 
 [dependencies]
-types = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_network_config = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-genesis = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-state_processing = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_wallet = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-tree_hash = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_ssz = "0.4.1"
+types = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
+eth2_network_config = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
+genesis = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
+state_processing = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
+eth2_wallet = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
+eth2_serde_utils = "0.1.0"
+tree_hash = "0.5.2"
 anyhow = "1.0.70"
+ethereum_ssz = "0.5.3"
 clap = { version = "4.2.4", features = ["derive"] }
 serde = "1.0.160"
 serde_yaml = "0.9.21"
@@ -41,21 +41,4 @@ serde_json = "1.0.111"
 [dev-dependencies]
 criterion = "0.3"
 pretty_assertions = "1.4.0"
-
-[patch]
-[patch.crates-io]
-eth2_ssz = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_ssz_derive = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_ssz_types = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-tree_hash = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-tree_hash_derive = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_serde_utils = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-eth2_hashing = { git = "https://github.com/sigp/lighthouse", rev = "a53830fd60a119bf3f659b253360af8027128e83" }
-
-[patch."https://github.com/ralexstokes/mev-rs"]
-mev-rs = { git = "https://github.com/ralexstokes//mev-rs", rev = "7813d4a4a564e0754e9aaab2d95520ba437c3889" }
-[patch."https://github.com/ralexstokes/ethereum-consensus"]
-ethereum-consensus = { git = "https://github.com/ralexstokes//ethereum-consensus", rev = "9b0ee0a8a45b968c8df5e7e64ea1c094e16f053d" }
-[patch."https://github.com/ralexstokes/ssz-rs"]
-ssz-rs = { git = "https://github.com/ralexstokes//ssz-rs", rev = "adf1a0b14cef90b9536f28ef89da1fab316465e1" }
 
