@@ -76,31 +76,27 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
         .map_err(|e| anyhow!("chain_spec error: {:?}", e))?;
 
     let genesis_time = spec.min_genesis_time + spec.genesis_delay;
-    let eth1_block_hash = parse_eth1_block_arg(cli)?;
+    let eth1_block_arg = Eth1BlockCliArg::parse_from_cli(cli)?;
+    let eth1_block_hash = eth1_block_arg.hash()?;
     let eth1_data = empty_eth1_data(eth1_block_hash);
     let mut state = BeaconState::<T>::new(genesis_time, eth1_data, spec);
 
     if let Ok(state) = state.as_capella_mut() {
-        let eth1_block_str = cli
-            .eth1_block
-            .as_ref()
-            .ok_or_else(|| anyhow!("should set eth1_block for capella genesis states"))?;
-
-        let maybe_path = Path::new(&eth1_block_str);
-        let eth1_block_json = if maybe_path.is_file() {
-            // If the path points to a file that exists, read the file
-            fs::read_to_string(maybe_path)?
-        } else {
-            // Otherwise, treat the input as a JSON string
-            eth1_block_str.to_string()
+        let eth1_block = match eth1_block_arg {
+            Eth1BlockCliArg::NotSet => {
+                return Err(anyhow!("Must set eth1_block for capella genesis state"))
+            }
+            Eth1BlockCliArg::Hash(_) => {
+                return Err(anyhow!(
+                "Must set eth1_block to a block JSON not just the hash for capella genesis state"
+            ))
+            }
+            Eth1BlockCliArg::Block(block) => block,
         };
 
-        let eth1_block: ethers_core::types::Block<ethers_core::types::Transaction> =
-            serde_json::from_str(&eth1_block_json)?;
-
         state.latest_execution_payload_header =
-            exec_json_block_to_execution_payload_header(eth1_block)?
-    }
+            exec_json_block_to_execution_payload_header(eth1_block)?;
+    };
 
     // Seed RANDAO with Eth1 entropy
     state.fill_randao_mixes_with(eth1_block_hash);
@@ -204,14 +200,49 @@ fn parse_mnemonics_arg(cli: &Cli) -> Result<Vec<MnemonicEntry>> {
     Ok(serde_yaml::from_str(&yaml_str)?)
 }
 
-fn parse_eth1_block_arg(cli: &Cli) -> Result<Hash256> {
-    let eth1_block_hash = match &cli.eth1_block {
-        Some(hash) => {
-            hex::decode(hash).map_err(|e| anyhow!("Invalid eth1_block {}: {:?}", hash, e))?
+enum Eth1BlockCliArg {
+    NotSet,
+    Hash(Hash256),
+    Block(ethers_core::types::Block<ethers_core::types::Transaction>),
+}
+
+impl Eth1BlockCliArg {
+    fn parse_from_cli(cli: &Cli) -> Result<Eth1BlockCliArg> {
+        let Some(eth1_block_str) = cli.eth1_block.as_ref() else {
+            return Ok(Eth1BlockCliArg::NotSet);
+        };
+
+        match hex::decode(&eth1_block_str) {
+            Ok(hash) => return Ok(Eth1BlockCliArg::Hash(Hash256::from_slice(&hash))),
+            Err(_) => {}
+        };
+
+        let eth1_block_str = cli
+            .eth1_block
+            .as_ref()
+            .ok_or_else(|| anyhow!("should set eth1_block for capella genesis states"))?;
+
+        let maybe_path = Path::new(&eth1_block_str);
+        let eth1_block_json = if maybe_path.is_file() {
+            // If the path points to a file that exists, read the file
+            fs::read_to_string(maybe_path)?
+        } else {
+            // Otherwise, treat the input as a JSON string
+            eth1_block_str.to_string()
+        };
+
+        Ok(Eth1BlockCliArg::Block(serde_json::from_str(
+            &eth1_block_json,
+        )?))
+    }
+
+    fn hash(&self) -> Result<Hash256> {
+        match self {
+            Eth1BlockCliArg::NotSet => Ok(Hash256::from_slice(&DEFAULT_ETH1_BLOCK_HASH.to_vec())),
+            Eth1BlockCliArg::Hash(hash) => Ok(*hash),
+            Eth1BlockCliArg::Block(block) => block.hash.ok_or_else(|| anyhow!("no block.hash")),
         }
-        None => DEFAULT_ETH1_BLOCK_HASH.to_vec(),
-    };
-    Ok(Hash256::from_slice(&eth1_block_hash))
+    }
 }
 
 fn empty_eth1_data(eth1_block_hash: Hash256) -> Eth1Data {
