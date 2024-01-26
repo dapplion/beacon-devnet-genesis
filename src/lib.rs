@@ -398,7 +398,11 @@ mod tests {
         );
     }
 
-    fn run_cli_test<T: EthSpec>(testnet_dir: &str, mnemonics: Option<String>) -> BeaconState<T> {
+    fn run_cli_test<T: EthSpec>(
+        testnet_dir: &str,
+        mnemonics: Option<String>,
+        output_path: Option<&str>,
+    ) -> BeaconState<T> {
         let count = 100;
         let mnemonics = mnemonics.unwrap_or(
             "
@@ -407,9 +411,12 @@ mod tests {
                 .to_string(),
         );
 
+        let output_path = output_path.to_owned().unwrap_or(testnet_dir);
+        let state_filepath = Path::new(output_path).join("genesis.ssz");
+
         run(Cli {
             testnet_dir: testnet_dir.to_string(),
-            output: None,
+            output: Some(output_path.to_string()),
             eth1_block: None,
             mnemonics,
         })
@@ -418,11 +425,9 @@ mod tests {
         let eth2_network_config = Eth2NetworkConfig::load(testnet_dir.into()).unwrap();
         let spec = &eth2_network_config.chain_spec::<T>().unwrap();
 
-        let state = BeaconState::<T>::from_ssz_bytes(
-            &fs::read(Path::new(testnet_dir).join("genesis.ssz")).unwrap(),
-            spec,
-        )
-        .unwrap();
+        dbg!(&state_filepath);
+        let state =
+            BeaconState::<T>::from_ssz_bytes(&fs::read(state_filepath).unwrap(), spec).unwrap();
 
         // Sanity check state has correct data
         assert_eq!(state.validators().len(), count, "wrong validators.len()");
@@ -433,17 +438,17 @@ mod tests {
 
     #[test]
     fn testnet_dir_mainnet() {
-        run_cli_test::<MainnetEthSpec>("tests/testnet_dir_mainnet", None);
+        run_cli_test::<MainnetEthSpec>("tests/testnet_dir_mainnet", None, None);
     }
 
     #[test]
     fn testnet_dir_minimal() {
-        run_cli_test::<MinimalEthSpec>("tests/testnet_dir_minimal", None);
+        run_cli_test::<MinimalEthSpec>("tests/testnet_dir_minimal", None, None);
     }
 
     #[test]
     fn testnet_dir_gnosis() {
-        run_cli_test::<GnosisEthSpec>("tests/testnet_dir_gnosis", None);
+        run_cli_test::<GnosisEthSpec>("tests/testnet_dir_gnosis", None, None);
     }
 
     #[test]
@@ -459,6 +464,7 @@ mod tests {
   withdrawal_execution_address: {address}
 ",
             )),
+            Some("execution_withdrawal"),
         );
 
         let expected_withdrawal_credentials = hex::decode(withcred).unwrap();
@@ -488,6 +494,6 @@ mod tests {
             exec_json_block_to_execution_payload_header::<GnosisEthSpec>(eth1_block).unwrap();
 
         let header = serde_json::to_string_pretty(&header).unwrap();
-        pretty_assertions::assert_eq!(header, expected_header);
+        pretty_assertions::assert_eq!(header, expected_header.trim());
     }
 }
