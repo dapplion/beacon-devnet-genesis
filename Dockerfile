@@ -1,4 +1,4 @@
-FROM rust:1.68.0 as builder
+FROM rust:1.73.0 as builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y protobuf-compiler cmake
 COPY . .
