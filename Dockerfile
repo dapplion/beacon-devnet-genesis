@@ -1,10 +1,10 @@
-FROM rust:1.73.0 as builder
+FROM rust:1.73.0-bullseye as builder
 WORKDIR /app
-RUN apt-get update && apt-get install -y protobuf-compiler cmake libclang-dev
+RUN apt-get update && apt-get -y upgrade && apt-get install -y protobuf-compiler cmake libclang-dev
 COPY . .
 RUN cargo build --release
 
 # Final layer to minimize size
-FROM gcr.io/distroless/cc-debian11
+FROM ubuntu:22.04
 COPY --from=builder /app/target/release/beacon-devnet-genesis /beacon-devnet-genesis
 ENTRYPOINT ["/beacon-devnet-genesis"]
