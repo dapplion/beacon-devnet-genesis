@@ -8,7 +8,8 @@ use eth2_wallet::{recover_validator_secret_from_mnemonic, KeyType};
 use genesis::{bls_withdrawal_credentials, DEFAULT_ETH1_BLOCK_HASH};
 use rayon::prelude::*;
 use serde::Deserialize;
-use ssz::{Decode, Encode};
+use ssz::Decode;
+use ssz::Encode;
 use state_processing::common::DepositDataTree;
 use state_processing::upgrade::{upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella};
 use std::fs;
@@ -16,12 +17,11 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tree_hash::TreeHash;
 use types::{
-    BeaconState, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash,
-    ExecutionPayloadHeaderCapella, GnosisEthSpec, Hash256, MainnetEthSpec, MinimalEthSpec,
+    BeaconState, ChainSpec, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash,
+    ExecutionPayloadHeaderCapella, GnosisEthSpec, Hash256, Keypair, MainnetEthSpec, MinimalEthSpec,
     PublicKeyBytes, SecretKey, Transactions, Uint256, Validator, Withdrawal, Withdrawals,
     DEPOSIT_TREE_DEPTH,
 };
-use types::{ChainSpec, Keypair};
 
 #[derive(Debug, Deserialize)]
 struct MnemonicEntry {
