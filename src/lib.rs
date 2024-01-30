@@ -81,23 +81,6 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
     let eth1_data = empty_eth1_data(eth1_block_hash);
     let mut state = BeaconState::<T>::new(genesis_time, eth1_data, spec);
 
-    if let Ok(state) = state.as_capella_mut() {
-        let eth1_block = match eth1_block_arg {
-            Eth1BlockCliArg::NotSet => {
-                return Err(anyhow!("Must set eth1_block for capella genesis state"))
-            }
-            Eth1BlockCliArg::Hash(_) => {
-                return Err(anyhow!(
-                "Must set eth1_block to a block JSON not just the hash for capella genesis state"
-            ))
-            }
-            Eth1BlockCliArg::Block(block) => block,
-        };
-
-        state.latest_execution_payload_header =
-            exec_json_block_to_execution_payload_header(eth1_block)?;
-    };
-
     // Seed RANDAO with Eth1 entropy
     state.fill_randao_mixes_with(eth1_block_hash);
 
@@ -179,6 +162,25 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
         upgrade_to_capella(&mut state, spec).unwrap();
     }
 
+    eprintln!("initializing state at fork {:?}", state.fork_name(spec));
+
+    if let Ok(state) = state.as_capella_mut() {
+        let eth1_block = match eth1_block_arg {
+            Eth1BlockCliArg::NotSet => {
+                return Err(anyhow!("Must set eth1_block for capella genesis state"))
+            }
+            Eth1BlockCliArg::Hash(_) => {
+                return Err(anyhow!(
+                "Must set eth1_block to a block JSON not just the hash for capella genesis state"
+            ))
+            }
+            Eth1BlockCliArg::Block(block) => block,
+        };
+
+        state.latest_execution_payload_header =
+            exec_json_block_to_execution_payload_header(eth1_block)?;
+    };
+
     // Persist output files
     let output = cli.output.clone().unwrap_or(cli.testnet_dir.clone());
     fs::create_dir_all(&output)?;
@@ -221,18 +223,20 @@ impl Eth1BlockCliArg {
             .as_ref()
             .ok_or_else(|| anyhow!("should set eth1_block for capella genesis states"))?;
 
-        let maybe_path = Path::new(&eth1_block_str);
-        let eth1_block_json = if maybe_path.is_file() {
+        let eth1_block_json = if is_path_not_json(eth1_block_str) {
             // If the path points to a file that exists, read the file
-            fs::read_to_string(maybe_path)?
+            fs::read_to_string(eth1_block_str)
+                .map_err(|e| anyhow!("error opening eth1_block file {eth1_block_str} {e}"))?
         } else {
             // Otherwise, treat the input as a JSON string
             eth1_block_str.to_string()
         };
 
-        Ok(Eth1BlockCliArg::Block(serde_json::from_str(
-            &eth1_block_json,
-        )?))
+        Ok(Eth1BlockCliArg::Block(
+            serde_json::from_str(&eth1_block_json).map_err(|e| {
+                anyhow!("error parsing eth1_block_json '{eth1_block_json:.20}' {e:?}")
+            })?,
+        ))
     }
 
     fn hash(&self) -> Result<Hash256> {
@@ -242,6 +246,10 @@ impl Eth1BlockCliArg {
             Eth1BlockCliArg::Block(block) => block.hash.ok_or_else(|| anyhow!("no block.hash")),
         }
     }
+}
+
+fn is_path_not_json(path: &str) -> bool {
+    path.contains(std::path::is_separator)
 }
 
 fn empty_eth1_data(eth1_block_hash: Hash256) -> Eth1Data {
@@ -400,25 +408,29 @@ mod tests {
 
     fn run_cli_test<T: EthSpec>(
         testnet_dir: &str,
-        mnemonics: Option<String>,
-        output_path: Option<&str>,
+        mnemonics: Option<&str>,
+        output_id: Option<&str>,
+        eth1_block: Option<&str>,
     ) -> BeaconState<T> {
         let count = 100;
         let mnemonics = mnemonics.unwrap_or(
             "
 - mnemonic: obvious call slogan version awful elder where never price clump uniform humble
-  count: 100"
-                .to_string(),
+  count: 100",
         );
 
-        let output_path = output_path.to_owned().unwrap_or(testnet_dir);
-        let state_filepath = Path::new(output_path).join("genesis.ssz");
+        let output_path = match output_id {
+            Some(output_id) => Path::new(testnet_dir).join(output_id),
+            None => Path::new(testnet_dir).to_path_buf(),
+        };
+
+        let state_filepath = output_path.join("genesis.ssz");
 
         run(Cli {
             testnet_dir: testnet_dir.to_string(),
-            output: Some(output_path.to_string()),
-            eth1_block: None,
-            mnemonics,
+            output: Some(output_path.to_string_lossy().into_owned()),
+            eth1_block: eth1_block.map(|s| s.to_string()),
+            mnemonics: mnemonics.to_string(),
         })
         .unwrap();
 
@@ -438,17 +450,17 @@ mod tests {
 
     #[test]
     fn testnet_dir_mainnet() {
-        run_cli_test::<MainnetEthSpec>("tests/testnet_dir_mainnet", None, None);
+        run_cli_test::<MainnetEthSpec>("tests/testnet_dir_mainnet", None, None, None);
     }
 
     #[test]
     fn testnet_dir_minimal() {
-        run_cli_test::<MinimalEthSpec>("tests/testnet_dir_minimal", None, None);
+        run_cli_test::<MinimalEthSpec>("tests/testnet_dir_minimal", None, None, None);
     }
 
     #[test]
     fn testnet_dir_gnosis() {
-        run_cli_test::<GnosisEthSpec>("tests/testnet_dir_gnosis", None, None);
+        run_cli_test::<GnosisEthSpec>("tests/testnet_dir_gnosis", None, None, None);
     }
 
     #[test]
@@ -457,7 +469,7 @@ mod tests {
         let withcred = "0x010000000000000000000000abababababababababababababababababababab";
         let state = run_cli_test::<MinimalEthSpec>(
             "tests/testnet_dir_minimal",
-            Some(format!(
+            Some(&format!(
                 "
 - mnemonic: obvious call slogan version awful elder where never price clump uniform humble
   count: 100
@@ -465,6 +477,7 @@ mod tests {
 ",
             )),
             Some("execution_withdrawal"),
+            None,
         );
 
         let expected_withdrawal_credentials = hex::decode(withcred).unwrap();
@@ -477,22 +490,44 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_json_block_to_execution_payload_header() {
+    fn testnet_dir_gnosis_capella_arg_path() {
+        testnet_dir_gnosis_capella(
+            "tests/testnet_dir_capella/block_exec_32096192.json",
+            "arg_path",
+        );
+    }
+
+    #[test]
+    fn testnet_dir_gnosis_capella_arg_json() {
+        let block_json =
+            fs::read_to_string("tests/testnet_dir_capella/block_exec_32096192.json").unwrap();
+        testnet_dir_gnosis_capella(&block_json, "arg_json");
+    }
+
+    fn testnet_dir_gnosis_capella(eth1_block_arg: &str, id: &str) {
         assert_eq!(
             GnosisEthSpec::max_withdrawals_per_payload(),
             8,
             "wrong GnosisEthSpec::max_withdrawals_per_payload"
         );
 
-        let expected_header =
-            fs::read_to_string("tests/latest_execution_payload_header_13412599.json").unwrap();
-        let eth1_block_json = fs::read_to_string("tests/block_exec_32096192.json").unwrap();
-        let eth1_block: ethers_core::types::Block<ethers_core::types::Transaction> =
-            serde_json::from_str(&eth1_block_json).unwrap();
+        let state = run_cli_test::<GnosisEthSpec>(
+            "tests/testnet_dir_capella",
+            None,
+            Some(id),
+            Some(eth1_block_arg),
+        );
 
-        let header =
-            exec_json_block_to_execution_payload_header::<GnosisEthSpec>(eth1_block).unwrap();
+        let header = if let BeaconState::Capella(state) = state {
+            state.latest_execution_payload_header
+        } else {
+            panic!("state is not capella");
+        };
 
+        let expected_header = fs::read_to_string(
+            "tests/testnet_dir_capella/latest_execution_payload_header_13412599.json",
+        )
+        .unwrap();
         let header = serde_json::to_string_pretty(&header).unwrap();
         pretty_assertions::assert_eq!(header, expected_header.trim());
     }
