@@ -128,6 +128,7 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
             };
 
             let completed = computed_validators.fetch_add(1, Ordering::Relaxed);
+            #[allow(clippy::manual_is_multiple_of)]
             if completed % 1000 == 0 {
                 eprintln!("computed validators {completed}")
             }
