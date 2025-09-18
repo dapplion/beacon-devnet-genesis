@@ -1,4 +1,4 @@
-FROM rust:1.73.0 as builder
+FROM rust:1.80.0-bullseye AS builder
 WORKDIR /app
 RUN apt-get update && apt-get -y upgrade && apt-get install -y protobuf-compiler cmake libclang-dev
 COPY . .
