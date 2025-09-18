@@ -22,21 +22,21 @@ name = "keypair_derive"
 harness = false
 
 [dependencies]
-types = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
-eth2_network_config = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
-genesis = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
-state_processing = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
-eth2_wallet = { git = "https://github.com/sigp/lighthouse", rev = "v4.6.0" }
-eth2_serde_utils = "0.1.0"
-tree_hash = "0.5.2"
-anyhow = "1.0.70"
-ethereum_ssz = "0.5.3"
-clap = { version = "4.2.4", features = ["derive"] }
-serde = "1.0.160"
-serde_yaml = "0.9.21"
-rayon = "1.7.0"
+types = { git = "https://github.com/sigp/lighthouse", rev = "v7.1.0" }
+eth2_network_config = { git = "https://github.com/sigp/lighthouse", rev = "v7.1.0" }
+genesis = { git = "https://github.com/sigp/lighthouse", rev = "v7.1.0" }
+state_processing = { git = "https://github.com/sigp/lighthouse", rev = "v7.1.0" }
+eth2_wallet = { git = "https://github.com/sigp/lighthouse", rev = "v7.1.0" }
+ethereum_serde_utils = "0.7"
+tree_hash = "0.9"
+anyhow = "1"
+ethereum_ssz = "0.8"
+clap = { version = "4.5", features = ["derive"] }
+serde = "1"
+serde_yaml = "0.9"
+rayon = "1.7"
 ethers-core = "2.0.12"
-serde_json = "1.0.111"
+serde_json = "1"
 
 [dev-dependencies]
 criterion = "0.3"

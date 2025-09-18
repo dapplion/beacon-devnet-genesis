@@ -1,24 +1,28 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use eth2_network_config::Eth2NetworkConfig;
-use eth2_serde_utils::hex;
 use eth2_wallet::bip39::Seed;
 use eth2_wallet::bip39::{Language, Mnemonic};
 use eth2_wallet::{recover_validator_secret_from_mnemonic, KeyType};
 use genesis::{bls_withdrawal_credentials, DEFAULT_ETH1_BLOCK_HASH};
 use rayon::prelude::*;
 use serde::Deserialize;
+use serde_utils::hex;
 use ssz::Decode;
 use ssz::Encode;
 use state_processing::common::DepositDataTree;
-use state_processing::upgrade::{upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella};
+use state_processing::upgrade::{
+    upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb,
+    upgrade_to_electra, upgrade_to_fulu,
+};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tree_hash::TreeHash;
 use types::{
-    BeaconState, ChainSpec, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash,
-    ExecutionPayloadHeaderCapella, GnosisEthSpec, Hash256, Keypair, MainnetEthSpec, MinimalEthSpec,
+    Address, BeaconState, ChainSpec, Epoch, Eth1Data, EthSpec, EthSpecId, ExecutionBlockHash,
+    ExecutionPayloadHeaderCapella, ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderElectra,
+    ExecutionPayloadHeaderFulu, GnosisEthSpec, Hash256, Keypair, MainnetEthSpec, MinimalEthSpec,
     PublicKeyBytes, SecretKey, Transactions, Uint256, Validator, Withdrawal, Withdrawals,
     DEPOSIT_TREE_DEPTH,
 };
@@ -82,7 +86,9 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
     let mut state = BeaconState::<T>::new(genesis_time, eth1_data, spec);
 
     // Seed RANDAO with Eth1 entropy
-    state.fill_randao_mixes_with(eth1_block_hash);
+    state
+        .fill_randao_mixes_with(eth1_block_hash)
+        .map_err(|e| anyhow!("Error filling randao mixes: {:?}", e))?;
 
     // Track tranches for latter auditing
     let mut tranches = String::from("validator_index,pubkey");
@@ -123,7 +129,7 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
 
             let completed = computed_validators.fetch_add(1, Ordering::Relaxed);
             if completed % 1000 == 0 {
-                eprintln!("computed validators {}", completed)
+                eprintln!("computed validators {completed}")
             }
             Ok(validator)
         })
@@ -161,24 +167,50 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
     if spec.capella_fork_epoch == Some(GENESIS_EPOCH) {
         upgrade_to_capella(&mut state, spec).unwrap();
     }
+    if spec.deneb_fork_epoch == Some(GENESIS_EPOCH) {
+        upgrade_to_deneb(&mut state, spec).unwrap();
+    }
+    if spec.electra_fork_epoch == Some(GENESIS_EPOCH) {
+        upgrade_to_electra(&mut state, spec).unwrap();
+    }
+    if spec.fulu_fork_epoch == Some(GENESIS_EPOCH) {
+        upgrade_to_fulu(&mut state, spec).unwrap();
+    }
 
     eprintln!("initializing state at fork {:?}", state.fork_name(spec));
 
-    if let Ok(state) = state.as_capella_mut() {
-        let eth1_block = match eth1_block_arg {
-            Eth1BlockCliArg::NotSet => {
-                return Err(anyhow!("Must set eth1_block for capella genesis state"))
-            }
-            Eth1BlockCliArg::Hash(_) => {
-                return Err(anyhow!(
-                "Must set eth1_block to a block JSON not just the hash for capella genesis state"
-            ))
-            }
-            Eth1BlockCliArg::Block(block) => block,
-        };
+    let maybe_eth1_block = match eth1_block_arg {
+        Eth1BlockCliArg::NotSet => None,
+        Eth1BlockCliArg::Hash(_) => None,
+        Eth1BlockCliArg::Block(block) => Some(block),
+    };
 
+    if let Ok(state) = state.as_capella_mut() {
+        let block = maybe_eth1_block
+            .clone()
+            .ok_or(anyhow!("Must set eth1_block for capella genesis state"))?;
         state.latest_execution_payload_header =
-            exec_json_block_to_execution_payload_header(eth1_block)?;
+            exec_block_to_execution_payload_header_capella(block)?;
+    };
+    if let Ok(state) = state.as_deneb_mut() {
+        let block = maybe_eth1_block
+            .clone()
+            .ok_or(anyhow!("Must set eth1_block for deneb genesis state"))?;
+        state.latest_execution_payload_header =
+            exec_block_to_execution_payload_header_deneb(block)?;
+    };
+    if let Ok(state) = state.as_electra_mut() {
+        let block = maybe_eth1_block
+            .clone()
+            .ok_or(anyhow!("Must set eth1_block for electra genesis state"))?;
+        state.latest_execution_payload_header =
+            exec_block_to_execution_payload_header_electra(block)?;
+    };
+    if let Ok(state) = state.as_fulu_mut() {
+        let block = maybe_eth1_block
+            .clone()
+            .ok_or(anyhow!("Must set eth1_block for fulu genesis state"))?;
+        state.latest_execution_payload_header = exec_block_to_execution_payload_header_fulu(block)?;
     };
 
     // Persist output files
@@ -202,6 +234,7 @@ fn parse_mnemonics_arg(cli: &Cli) -> Result<Vec<MnemonicEntry>> {
     Ok(serde_yaml::from_str(&yaml_str)?)
 }
 
+#[allow(clippy::large_enum_variant)]
 enum Eth1BlockCliArg {
     NotSet,
     Hash(Hash256),
@@ -243,7 +276,10 @@ impl Eth1BlockCliArg {
         match self {
             Eth1BlockCliArg::NotSet => Ok(Hash256::from_slice(DEFAULT_ETH1_BLOCK_HASH)),
             Eth1BlockCliArg::Hash(hash) => Ok(*hash),
-            Eth1BlockCliArg::Block(block) => block.hash.ok_or_else(|| anyhow!("no block.hash")),
+            Eth1BlockCliArg::Block(block) => block
+                .hash
+                .ok_or_else(|| anyhow!("no block.hash"))
+                .map(|hash| Hash256::from_slice(hash.as_ref())),
         }
     }
 }
@@ -314,9 +350,134 @@ fn compute_withdrawal_credentials(
     })
 }
 
-fn exec_json_block_to_execution_payload_header<T: EthSpec>(
+fn exec_block_to_execution_payload_header_capella<T: EthSpec>(
     eth1_block: ethers_core::types::Block<ethers_core::types::Transaction>,
 ) -> Result<ExecutionPayloadHeaderCapella<T>> {
+    let (transactions, withdrawals) = parse_ethers_block_withdrawals_and_txs::<T>(&eth1_block);
+    Ok(ExecutionPayloadHeaderCapella {
+        parent_hash: ExecutionBlockHash::from_root(eth1_block.parent_hash.to_fixed_bytes().into()),
+        fee_recipient: to_address(
+            eth1_block
+                .author
+                .ok_or_else(|| anyhow!("no block.author"))?,
+        ),
+        state_root: to_hash256(eth1_block.state_root),
+        receipts_root: to_hash256(eth1_block.receipts_root),
+        logs_bloom: eth1_block
+            .logs_bloom
+            .ok_or_else(|| anyhow!("no block.logs_bloom"))?
+            .to_fixed_bytes()
+            .to_vec()
+            .into(),
+        prev_randao: to_hash256(
+            eth1_block
+                .mix_hash
+                .ok_or_else(|| anyhow!("no block.mix_hash"))?,
+        ),
+        block_number: eth1_block
+            .number
+            .ok_or_else(|| anyhow!("no block.number"))?
+            .as_u64(),
+        gas_limit: eth1_block.gas_limit.as_u64(),
+        gas_used: eth1_block.gas_used.as_u64(),
+        timestamp: eth1_block.timestamp.as_u64(),
+        extra_data: eth1_block.extra_data.to_vec().into(),
+        base_fee_per_gas: to_uint256(
+            eth1_block
+                .base_fee_per_gas
+                .ok_or_else(|| anyhow!("no block.base_fee_per_gas"))?,
+        )
+        .map_err(|e| anyhow!("unable to convert base_fee_per_gas {e:?}"))?,
+        block_hash: ExecutionBlockHash::from_root(
+            eth1_block
+                .hash
+                .ok_or_else(|| anyhow!("no block.hash"))?
+                .to_fixed_bytes()
+                .into(),
+        ),
+        withdrawals_root: withdrawals.tree_hash_root(),
+        transactions_root: transactions.tree_hash_root(),
+    })
+}
+
+fn exec_block_to_execution_payload_header_deneb<T: EthSpec>(
+    eth1_block: ethers_core::types::Block<ethers_core::types::Transaction>,
+) -> Result<ExecutionPayloadHeaderDeneb<T>> {
+    let block = exec_block_to_execution_payload_header_capella::<T>(eth1_block)?;
+    Ok(ExecutionPayloadHeaderDeneb {
+        parent_hash: block.parent_hash,
+        fee_recipient: block.fee_recipient,
+        state_root: block.state_root,
+        receipts_root: block.receipts_root,
+        logs_bloom: block.logs_bloom,
+        prev_randao: block.prev_randao,
+        block_number: block.block_number,
+        gas_limit: block.gas_limit,
+        gas_used: block.gas_used,
+        timestamp: block.timestamp,
+        extra_data: block.extra_data,
+        base_fee_per_gas: block.base_fee_per_gas,
+        block_hash: block.block_hash,
+        withdrawals_root: block.withdrawals_root,
+        transactions_root: block.transactions_root,
+        blob_gas_used: 0,
+        excess_blob_gas: 0,
+    })
+}
+
+fn exec_block_to_execution_payload_header_electra<T: EthSpec>(
+    eth1_block: ethers_core::types::Block<ethers_core::types::Transaction>,
+) -> Result<ExecutionPayloadHeaderElectra<T>> {
+    let block = exec_block_to_execution_payload_header_deneb::<T>(eth1_block)?;
+    Ok(ExecutionPayloadHeaderElectra {
+        parent_hash: block.parent_hash,
+        fee_recipient: block.fee_recipient,
+        state_root: block.state_root,
+        receipts_root: block.receipts_root,
+        logs_bloom: block.logs_bloom,
+        prev_randao: block.prev_randao,
+        block_number: block.block_number,
+        gas_limit: block.gas_limit,
+        gas_used: block.gas_used,
+        timestamp: block.timestamp,
+        extra_data: block.extra_data,
+        base_fee_per_gas: block.base_fee_per_gas,
+        block_hash: block.block_hash,
+        withdrawals_root: block.withdrawals_root,
+        transactions_root: block.transactions_root,
+        blob_gas_used: block.blob_gas_used,
+        excess_blob_gas: block.excess_blob_gas,
+    })
+}
+
+fn exec_block_to_execution_payload_header_fulu<T: EthSpec>(
+    eth1_block: ethers_core::types::Block<ethers_core::types::Transaction>,
+) -> Result<ExecutionPayloadHeaderFulu<T>> {
+    let block = exec_block_to_execution_payload_header_electra::<T>(eth1_block)?;
+    Ok(ExecutionPayloadHeaderFulu {
+        parent_hash: block.parent_hash,
+        fee_recipient: block.fee_recipient,
+        state_root: block.state_root,
+        receipts_root: block.receipts_root,
+        logs_bloom: block.logs_bloom,
+        prev_randao: block.prev_randao,
+        block_number: block.block_number,
+        gas_limit: block.gas_limit,
+        gas_used: block.gas_used,
+        timestamp: block.timestamp,
+        extra_data: block.extra_data,
+        base_fee_per_gas: block.base_fee_per_gas,
+        block_hash: block.block_hash,
+        withdrawals_root: block.withdrawals_root,
+        transactions_root: block.transactions_root,
+        blob_gas_used: block.blob_gas_used,
+        excess_blob_gas: block.excess_blob_gas,
+    })
+}
+
+fn parse_ethers_block_withdrawals_and_txs<T: EthSpec>(
+    eth1_block: &ethers_core::types::Block<ethers_core::types::Transaction>,
+) -> (Transactions<T>, Withdrawals<T>) {
     let transactions: Transactions<T> = eth1_block
         .transactions
         .iter()
@@ -324,7 +485,7 @@ fn exec_json_block_to_execution_payload_header<T: EthSpec>(
         .collect::<Vec<_>>()
         .into();
 
-    let withdrawals: Withdrawals<T> = if let Some(el_withdrawals) = eth1_block.withdrawals {
+    let withdrawals: Withdrawals<T> = if let Some(ref el_withdrawals) = eth1_block.withdrawals {
         el_withdrawals
             .iter()
             .map(|withdrawal| Withdrawal {
@@ -339,47 +500,21 @@ fn exec_json_block_to_execution_payload_header<T: EthSpec>(
         <_>::default()
     };
 
-    Ok(ExecutionPayloadHeaderCapella {
-        parent_hash: ExecutionBlockHash::from_root(eth1_block.parent_hash.to_fixed_bytes().into()),
-        fee_recipient: eth1_block
-            .author
-            .ok_or_else(|| anyhow!("no block.author"))?,
-        state_root: eth1_block.state_root,
-        receipts_root: eth1_block.receipts_root,
-        logs_bloom: eth1_block
-            .logs_bloom
-            .ok_or_else(|| anyhow!("no block.logs_bloom"))?
-            .to_fixed_bytes()
-            .to_vec()
-            .into(),
-        prev_randao: eth1_block
-            .mix_hash
-            .ok_or_else(|| anyhow!("no block.mix_hash"))?,
-        block_number: eth1_block
-            .number
-            .ok_or_else(|| anyhow!("no block.number"))?
-            .as_u64(),
-        gas_limit: eth1_block.gas_limit.as_u64(),
-        gas_used: eth1_block.gas_used.as_u64(),
-        timestamp: eth1_block.timestamp.as_u64(),
-        extra_data: eth1_block.extra_data.to_vec().into(),
-        base_fee_per_gas: Uint256::from_ssz_bytes(
-            &eth1_block
-                .base_fee_per_gas
-                .ok_or_else(|| anyhow!("no block.base_fee_per_gas"))?
-                .as_ssz_bytes(),
-        )
-        .map_err(|e| anyhow!("unable to convert base_fee_per_gas {e:?}"))?,
-        block_hash: ExecutionBlockHash::from_root(
-            eth1_block
-                .hash
-                .ok_or_else(|| anyhow!("no block.hash"))?
-                .to_fixed_bytes()
-                .into(),
-        ),
-        withdrawals_root: withdrawals.tree_hash_root(),
-        transactions_root: transactions.tree_hash_root(),
-    })
+    (transactions, withdrawals)
+}
+
+fn to_hash256(hash: ethers_core::types::H256) -> Hash256 {
+    Hash256::from_slice(hash.as_ref())
+}
+
+fn to_address(addr: ethers_core::types::Address) -> Address {
+    Address::from_slice(addr.as_ref())
+}
+
+fn to_uint256(u: ethers_core::types::U256) -> Result<Uint256, ssz::DecodeError> {
+    let mut b = [0u8; 32];
+    u.to_little_endian(&mut b);
+    Uint256::from_ssz_bytes(&b)
 }
 
 #[cfg(test)]
