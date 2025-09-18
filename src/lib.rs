@@ -128,7 +128,7 @@ fn run_with_spec<T: EthSpec>(eth2_network_config: Eth2NetworkConfig, cli: &Cli) 
             };
 
             let completed = computed_validators.fetch_add(1, Ordering::Relaxed);
-            if completed % 1000 == 0 {
+            if completed.is_multiple_of(1000) {
                 eprintln!("computed validators {completed}")
             }
             Ok(validator)
